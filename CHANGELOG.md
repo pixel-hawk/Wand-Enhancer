@@ -3,6 +3,16 @@
 This file is the source of truth for release notes.
 The newest entry must match the version in `WandEnhancer/Properties/AssemblyInfo.cs`.
 
+## [2.1.0.1] - 2026-10-11
+
+### Features
+
+- Folder path is now an editable input box: paste or type a path and press Enter to apply, or use the `...` button for the folder dialog. Pasted `.exe` paths and parent install folders are resolved automatically.
+
+### Fixes
+
+- Release workflow now attaches the built executable (`WandEnhancer-<version>.exe`) to the GitHub release and works on this fork.
+
 ## [2.1.0.0] - 2026-09-09
 
 ### Features
