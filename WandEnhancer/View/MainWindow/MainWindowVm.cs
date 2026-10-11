@@ -28,6 +28,15 @@ namespace WandEnhancer.View.MainWindow
             set => SetProperty(ref _weModConfig, value);
         }
 
+        private string _folderPathInput = string.Empty;
+
+        /// <summary>Editable folder path text. Applied on Enter / Browse.</summary>
+        public string FolderPathInput
+        {
+            get => _folderPathInput;
+            set => SetProperty(ref _folderPathInput, value);
+        }
+
         private void UseInstall(WeModConfig config)
         {
             WeModInfo = config;
@@ -35,6 +44,8 @@ namespace WandEnhancer.View.MainWindow
             {
                 return;
             }
+
+            FolderPathInput = config.RootDirectory;
 
             Log(LocalizationManager.Format("log_install_found", config, config.ExecutableName), ELogType.Success);
             AlreadyPatched = Enhancer.IsPatched(config.RootDirectory);
@@ -88,6 +99,7 @@ namespace WandEnhancer.View.MainWindow
         public bool IsIdle => !_isBusy;
 
         public RelayCommand SetFolderPathCommand { get; }
+        public RelayCommand ApplyFolderPathCommand { get; }
         public RelayCommand ApplyPatchCommand { get; }
         public RelayCommand RestoreBackupCommand { get; }
         public RelayCommand OpenSettingsCommand { get; }
@@ -104,14 +116,88 @@ namespace WandEnhancer.View.MainWindow
                 return;
             }
 
-            var info = WeModInstalls.CheckWeModPath(selectedPath);
+            TryApplyFolderPath(selectedPath);
+        }
+
+        private void OnApplyFolderPathFromInput(object obj)
+        {
+            string rawPath = obj as string ?? FolderPathInput;
+            TryApplyFolderPath(rawPath);
+        }
+
+        /// <summary>Validates a typed or browsed path and applies it when valid.</summary>
+        /// <returns>True when the path was accepted.</returns>
+        private bool TryApplyFolderPath(string rawPath)
+        {
+            if (string.IsNullOrWhiteSpace(rawPath))
+            {
+                Log(LocalizationManager.Get("log_no_directory"), ELogType.Warn);
+                return false;
+            }
+
+            string candidate = rawPath.Trim().Trim('"').Trim();
+            try
+            {
+                candidate = Environment.ExpandEnvironmentVariables(candidate);
+            }
+            catch
+            {
+                // Keep the trimmed candidate when expansion fails.
+            }
+
+            try
+            {
+                // Allow pasting the exe itself: use its directory.
+                if (File.Exists(candidate))
+                {
+                    candidate = Path.GetDirectoryName(candidate);
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException)
+            {
+                // Fall through to invalid-directory handling below.
+            }
+
+            WeModConfig info = null;
+            try
+            {
+                info = WeModInstalls.CheckWeModPath(candidate);
+                if (info == null && Directory.Exists(candidate))
+                {
+                    // Also accept a parent install folder (e.g. %LOCALAPPDATA%/Wand)
+                    // by resolving its latest app-* child.
+                    info = WeModInstalls.FindLatestWeMod(candidate);
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException)
+            {
+                info = null;
+            }
+
             if (info == null)
             {
-                Log(LocalizationManager.Format("log_invalid_directory", Path.GetFileName(selectedPath)), ELogType.Error);
-                return;
+                string displayName;
+                try
+                {
+                    displayName = Path.GetFileName(candidate);
+                    if (string.IsNullOrEmpty(displayName))
+                    {
+                        displayName = candidate;
+                    }
+                }
+                catch
+                {
+                    displayName = candidate;
+                }
+
+                Log(LocalizationManager.Format("log_invalid_directory", displayName), ELogType.Error);
+                // Revert the input box to the last valid install.
+                FolderPathInput = WeModInfo?.RootDirectory ?? string.Empty;
+                return false;
             }
 
             UseInstall(info);
+            return true;
         }
 
         // Runs off the UI thread due to heavy file IO.
@@ -256,6 +342,7 @@ namespace WandEnhancer.View.MainWindow
             _shell = shell;
             _dialogs = dialogs;
             SetFolderPathCommand = new RelayCommand(OnFolderPathSelection);
+            ApplyFolderPathCommand = new RelayCommand(OnApplyFolderPathFromInput);
             ApplyPatchCommand = new RelayCommand(OnPatching);
             RestoreBackupCommand = new RelayCommand(OnBackupRestoring);
             OpenSettingsCommand = new RelayCommand(OnOpenSettings);
